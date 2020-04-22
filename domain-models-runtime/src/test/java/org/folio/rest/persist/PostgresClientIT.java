@@ -38,6 +38,7 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.Timeout;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 
+import io.vertx.sqlclient.SqlConnection;
 import org.apache.commons.io.IOUtils;
 import org.folio.cql2pgjson.CQL2PgJSON;
 import org.folio.cql2pgjson.exception.FieldException;
@@ -140,8 +141,8 @@ public class PostgresClientIT {
    * is {@code Handler<AsyncResult<SQLConnection>>} and not {@code Handler<SQLConnection>}.
    * Usage: {@code postgresClient.startTx(asyncAssertTx(context, trans ->}
    */
-  private static Handler<AsyncResult<SQLConnection>> asyncAssertTx(
-      TestContext context, Handler<AsyncResult<SQLConnection>> resultHandler) {
+  private static Handler<AsyncResult<SqlConnection>> asyncAssertTx(
+      TestContext context, Handler<AsyncResult<SqlConnection>> resultHandler) {
 
     Async async = context.async();
     return trans -> {
@@ -270,7 +271,7 @@ public class PostgresClientIT {
   private void execute(TestContext context, String sql) {
     Async async = context.async();
     PostgresClient c = PostgresClient.getInstance(vertx);
-    c.getClient().update(sql, reply -> {
+    c.getClient().query(sql, reply -> {
       c.closeClient(close -> {
         assertSuccess(context, reply);
         assertSuccess(context, close);
@@ -283,7 +284,7 @@ public class PostgresClientIT {
   private void executeIgnore(TestContext context, String sql) {
     Async async = context.async();
     PostgresClient c = PostgresClient.getInstance(vertx);
-    c.getClient().update(sql, reply -> {
+    c.getClient().query(sql, reply -> {
       c.closeClient(close -> {
         assertSuccess(context, close);
         async.complete();
@@ -353,7 +354,7 @@ public class PostgresClientIT {
     String schema = PostgresClient.convertToPsqlStandard(tenant);
     execute(context, "INSERT INTO "  + schema + ".a (i) VALUES (" + i + ") ON CONFLICT DO NOTHING;");
     client.select("SELECT i FROM " + schema + ".a", context.asyncAssertSuccess(get -> {
-      context.assertEquals(i, get.getResults().get(0).getInteger(0));
+      context.assertEquals(i, get.iterator().next().getInteger(0));
       async.complete();
     }));
     async.awaitSuccess(5000);
@@ -453,11 +454,11 @@ public class PostgresClientIT {
     String id2 = randomUuid();
     PostgresClient postgresClient = insertXAndSingleQuotePojo(context, new JsonArray().add(id).add(id2));
     postgresClient.delete(FOO, id, context.asyncAssertSuccess(delete -> {
-      context.assertEquals(1, delete.getUpdated(), "number of records deleted");
+      context.assertEquals(1, delete.rowCount(), "number of records deleted");
       postgresClient.selectSingle("SELECT count(*) FROM " + FOO, context.asyncAssertSuccess(select -> {
         context.assertEquals(1, select.getInteger(0), "remaining records");
         postgresClient.delete(FOO, id, context.asyncAssertSuccess(delete2 -> {
-          context.assertEquals(0, delete2.getUpdated(), "number of records deleted");
+          context.assertEquals(0, delete2.rowCount(), "number of records deleted");
         }));
       }));
     }));
@@ -483,7 +484,7 @@ public class PostgresClientIT {
     CQLWrapper cqlWrapper = new CQLWrapper(cql2pgJson, "key==" + key);
     PostgresClient postgresClient = insertXAndSingleQuotePojo(context, new JsonArray().add(randomUuid()).add(randomUuid()));
     postgresClient.delete(FOO, cqlWrapper, context.asyncAssertSuccess(delete -> {
-      context.assertEquals(1, delete.getUpdated(), "number of records deleted");
+      context.assertEquals(1, delete.rowCount(), "number of records deleted");
       postgresClient.selectSingle("SELECT count(*) FROM " + FOO, context.asyncAssertSuccess(select -> {
         context.assertEquals(1, select.getInteger(0), "remaining records");
         async.complete();
@@ -516,7 +517,7 @@ public class PostgresClientIT {
     criterion.addCriterion(new Criteria().addField("'key'").setOperation("=").setVal(key));
     PostgresClient postgresClient = insertXAndSingleQuotePojo(context, new JsonArray().add(randomUuid()).add(randomUuid()));
     postgresClient.delete(FOO, criterion, context.asyncAssertSuccess(delete -> {
-      context.assertEquals(1, delete.getUpdated(), "number of records deleted");
+      context.assertEquals(1, delete.rowCount(), "number of records deleted");
       postgresClient.selectSingle("SELECT count(*) FROM " + FOO, context.asyncAssertSuccess(select -> {
         context.assertEquals(1, select.getInteger(0), "remaining records");
         async.complete();
@@ -574,11 +575,11 @@ public class PostgresClientIT {
     StringPojo pojo2 = new StringPojo("x", randomUuid());
     PostgresClient postgresClient = insertXAndSingleQuotePojo(context, new JsonArray().add(pojo2.id).add(pojo1.id));
     postgresClient.delete(FOO, pojo2, context.asyncAssertSuccess(delete1 -> {
-      context.assertEquals(1, delete1.getUpdated(), "number of records deleted");
+      context.assertEquals(1, delete1.rowCount(), "number of records deleted");
       postgresClient.selectSingle("SELECT count(*) FROM " + FOO, context.asyncAssertSuccess(select1 -> {
         context.assertEquals(1, select1.getInteger(0), "remaining records");
         postgresClient.delete(FOO, pojo1, context.asyncAssertSuccess(delete2 -> {
-          context.assertEquals(1, delete2.getUpdated(), "number of records deleted");
+          context.assertEquals(1, delete2.rowCount(), "number of records deleted");
           postgresClient.selectSingle("SELECT count(*) FROM " + FOO, context.asyncAssertSuccess(select2 -> {
             context.assertEquals(0, select2.getInteger(0), "remaining records");
           }));
@@ -667,7 +668,7 @@ public class PostgresClientIT {
     postgresClient = createFoo(context);
     postgresClient.save(FOO, xPojo, context.asyncAssertSuccess(save -> {
       postgresClient.update(FOO, updateSection, (Criterion) null, true, context.asyncAssertSuccess(update -> {
-        context.assertEquals(1, update.getUpdated(), "number of records updated");
+        context.assertEquals(1, update.rowCount(), "number of records updated");
         postgresClient.selectSingle("SELECT jsonb->>'key' FROM " + FOO, context.asyncAssertSuccess(select -> {
           context.assertEquals("'", select.getString(0), "single quote");
         }));
@@ -685,7 +686,7 @@ public class PostgresClientIT {
     String id = randomUuid();
     postgresClient = insertXAndSingleQuotePojo(context, new JsonArray().add(randomUuid()).add(id));
     postgresClient.update(FOO, updateSection, criterion, false, context.asyncAssertSuccess(update -> {
-      context.assertEquals(1, update.getUpdated(), "number of records updated");
+      context.assertEquals(1, update.rowCount(), "number of records updated");
       String sql = "SELECT jsonb->>'key' FROM " + FOO + " WHERE id='"+id+"'";
       postgresClient.selectSingle(sql, context.asyncAssertSuccess(select -> {
         context.assertEquals("z", select.getString(0), "single quote became z");
@@ -876,11 +877,11 @@ public class PostgresClientIT {
       context.assertEquals(id, save);
       String fullTable = PostgresClient.convertToPsqlStandard(TENANT) + "." + FOO;
       postgresClient.select("SELECT jsonb FROM " + fullTable, context.asyncAssertSuccess(select -> {
-        context.assertEquals(base64(witloof), select.getRows().get(0).getString("jsonb"), "select");
+        context.assertEquals(base64(witloof), select.iterator().next().getString("jsonb"), "select");
         postgresClient.upsert(FOO, id, new JsonArray().add(weld), /* convertEntity */ false, context.asyncAssertSuccess(update -> {
           context.assertEquals(id, update);
           postgresClient.select("SELECT jsonb FROM " + fullTable, context.asyncAssertSuccess(select2 -> {
-            context.assertEquals(base64(weld), select2.getRows().get(0).getString("jsonb"), "select2");
+            context.assertEquals(base64(weld), select2.iterator().next().getString("jsonb"), "select2");
           }));
         }));
       }));
@@ -915,11 +916,11 @@ public class PostgresClientIT {
       context.assertEquals(id, save);
       String fullTable = PostgresClient.convertToPsqlStandard(TENANT) + "." + FOO;
       postgresClient.select("SELECT jsonb FROM " + fullTable, context.asyncAssertSuccess(select -> {
-        context.assertEquals(base64(apple), select.getRows().get(0).getString("jsonb"), "select");
+        context.assertEquals(base64(apple), select.iterator().next().getString("jsonb"), "select");
         postgresClient.save(FOO, id, new JsonArray().add(banana), true, true, false, context.asyncAssertSuccess(update -> {
           context.assertEquals(id, update);
           postgresClient.select("SELECT jsonb FROM " + fullTable, context.asyncAssertSuccess(select2 -> {
-            context.assertEquals(base64(banana), select2.getRows().get(0).getString("jsonb"), "select2");
+            context.assertEquals(base64(banana), select2.iterator().next().getString("jsonb"), "select2");
           }));
         }));
       }));
@@ -1026,7 +1027,7 @@ public class PostgresClientIT {
   @Test
   public void saveBatchNullList(TestContext context) {
     createFoo(context).saveBatch(FOO, (List<Object>)null, context.asyncAssertSuccess(save -> {
-      context.assertEquals(0, save.getNumRows());
+      context.assertEquals(0, save.rowCount());
     }));
   }
 
@@ -1034,7 +1035,7 @@ public class PostgresClientIT {
   public void saveBatchEmptyList(TestContext context) {
     List<Object> list = Collections.emptyList();
     createFoo(context).saveBatch(FOO, list, context.asyncAssertSuccess(save -> {
-      context.assertEquals(0, save.getNumRows());
+      context.assertEquals(0, save.rowCount());
     }));
   }
 

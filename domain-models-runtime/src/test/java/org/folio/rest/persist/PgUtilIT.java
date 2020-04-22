@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import javax.ws.rs.core.Response;
 
+import io.vertx.pgclient.PgException;
 import org.folio.rest.jaxrs.model.Error;
 import org.folio.rest.jaxrs.model.Errors;
 import org.folio.rest.jaxrs.model.Referencing;
@@ -122,13 +123,12 @@ public class PgUtilIT {
   private static void execute(TestContext context, String sql) {
     StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
     Async async = context.async();
-    PostgresClient.getInstance(vertx).getClient().querySingle(sql, reply -> {
+    PostgresClient.getInstance(vertx).getClient().query(sql, reply -> {
       if (reply.failed()) {
         Throwable throwable = new AssertionFailedError(reply.cause().getMessage() + ": " + sql);
         throwable.setStackTrace(stackTrace);
         context.fail(throwable);
       }
-
       async.complete();
     });
     async.awaitSuccess();
@@ -136,7 +136,7 @@ public class PgUtilIT {
 
   private static void executeIgnore(TestContext context, String sql) {
     Async async = context.async();
-    PostgresClient.getInstance(vertx).getClient().querySingle(sql, reply -> {
+    PostgresClient.getInstance(vertx).getClient().query(sql, reply -> {
       async.complete();
     });
     async.awaitSuccess();
@@ -780,7 +780,7 @@ public class PgUtilIT {
 
   @Test
   public void responseForeignKeyViolationNoMatch400(TestContext testContext) throws Exception {
-    Exception genericDatabaseException = PgExceptionUtilTest.genericDatabaseException('D', "barMessage");
+    Exception genericDatabaseException = new PgException("", null, "", "barMessage");
     PgExceptionFacade exception = new PgExceptionFacade(genericDatabaseException);
     Method respond400 = ResponseImpl.class.getMethod("respond400WithTextPlain", Object.class);
     Method respond500 = ResponseImpl.class.getMethod("respond500WithTextPlain", Object.class);
@@ -792,7 +792,7 @@ public class PgUtilIT {
 
   @Test
   public void responseForeignKeyViolationNoMatch422(TestContext testContext) throws Exception {
-    Exception genericDatabaseException = PgExceptionUtilTest.genericDatabaseException('D', "bazMessage");
+    Exception genericDatabaseException = new PgException("", null, "", "bazMessage");
     PgExceptionFacade exception = new PgExceptionFacade(genericDatabaseException);
     Method respond400 = ResponseImpl.class.getMethod("respond400WithTextPlain", Object.class);
     Method respond500 = ResponseImpl.class.getMethod("respond500WithTextPlain", Object.class);
@@ -813,7 +813,7 @@ public class PgUtilIT {
 
   @Test
   public void responseUniqueViolationNoMatch400(TestContext testContext) throws Exception {
-    Exception genericDatabaseException = PgExceptionUtilTest.genericDatabaseException('D', "fooMessage");
+    Exception genericDatabaseException = new PgException("", null, "", "fooMessage");
     PgExceptionFacade exception = new PgExceptionFacade(genericDatabaseException);
     Method respond400 = ResponseImpl.class.getMethod("respond400WithTextPlain", Object.class);
     Method respond500 = ResponseImpl.class.getMethod("respond500WithTextPlain", Object.class);
@@ -825,7 +825,7 @@ public class PgUtilIT {
 
   @Test
   public void responseUniqueViolationNoMatch422(TestContext testContext) throws Exception {
-    Exception genericDatabaseException = PgExceptionUtilTest.genericDatabaseException('D', "fooMessage");
+    Exception genericDatabaseException = new PgException("", null, "", "fooMessage");
     PgExceptionFacade exception = new PgExceptionFacade(genericDatabaseException);
     Method respond400 = ResponseImpl.class.getMethod("respond400WithTextPlain", Object.class);
     Method respond500 = ResponseImpl.class.getMethod("respond500WithTextPlain", Object.class);
