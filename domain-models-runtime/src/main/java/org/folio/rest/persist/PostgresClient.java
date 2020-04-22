@@ -3026,7 +3026,7 @@ public class PostgresClient {
 
     Transaction tx = conn.result().begin();
     executeT(tx, sql, params, res -> {
-      tx.commit();;
+      tx.commit();
       replyHandler.handle(res);
     });
   }

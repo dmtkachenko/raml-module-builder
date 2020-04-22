@@ -1,10 +1,10 @@
 package org.folio.rest.persist;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
-import com.github.jasync.sql.db.postgresql.exceptions.GenericDatabaseException;
-import com.github.jasync.sql.db.postgresql.messages.backend.ErrorMessage;
+import io.vertx.pgclient.PgException;
 
 /**
  * Easy access to
@@ -18,13 +18,14 @@ public class PgExceptionFacade {
    * @param throwable a GenericDatabaseException; any other Throwable is handled gracefully
    */
   public PgExceptionFacade(Throwable throwable) {
-    if (!(throwable instanceof GenericDatabaseException)) {
+    if (!(throwable instanceof PgException)) {
       fields = Collections.emptyMap();
       return;
     }
 
-    ErrorMessage errorMessage = ((GenericDatabaseException) throwable).getErrorMessage();
-    fields = errorMessage.getFields();
+    String code  = ((PgException) throwable).getCode(); // getDetails or getSeverity
+    fields = new HashMap<>();
+    // fields = errorMessage.getFields();
   }
 
   /**

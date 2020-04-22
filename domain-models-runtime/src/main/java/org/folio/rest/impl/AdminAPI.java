@@ -15,6 +15,9 @@ import java.util.function.BiConsumer;
 
 import javax.ws.rs.core.Response;
 
+import io.vertx.sqlclient.Row;
+import io.vertx.sqlclient.RowIterator;
+import io.vertx.sqlclient.RowSet;
 import org.apache.commons.io.IOUtils;
 import org.folio.rest.RestVerticle;
 import org.folio.rest.annotations.Validate;
@@ -42,7 +45,6 @@ import io.vertx.core.Handler;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.sql.ResultSet;
 
 public class AdminAPI implements Admin {
 
@@ -243,7 +245,7 @@ public class AdminAPI implements Admin {
           if(reply.succeeded()){
 
             OutStream stream = new OutStream();
-            stream.setData(reply.result().getRows());
+            stream.setData(reply.result().toString());
 
             asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminPostgresActiveSessionsResponse.
               respond200WithApplicationJson(stream)));
@@ -274,7 +276,7 @@ public class AdminAPI implements Admin {
                     + "as BUFFER_HIT_PERCENT FROM pg_stat_database WHERE datname = '"+dbname+"'", reply2 -> {
                   if(reply2.succeeded()){
                     OutStream stream = new OutStream();
-                    stream.setData(reply2.result().getRows());
+                    stream.setData(reply2.result().toString());
                     asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminPostgresLoadResponse.
                       respond200WithApplicationJson(stream)));
                   }
@@ -308,7 +310,7 @@ public class AdminAPI implements Admin {
           if(reply.succeeded()){
 
             OutStream stream = new OutStream();
-            stream.setData(reply.result().getRows());
+            stream.setData(reply.result().toString());
 
             asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminPostgresTableAccessStatsResponse.
               respond200WithApplicationJson(stream)));
@@ -332,7 +334,7 @@ public class AdminAPI implements Admin {
         if(reply.succeeded()){
 
           OutStream stream = new OutStream();
-          stream.setData(reply.result().getRows());
+          stream.setData(reply.result().toString());
 
           asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminPostgresTableAccessStatsResponse.
             respond200WithApplicationJson(stream)));
@@ -390,7 +392,7 @@ public class AdminAPI implements Admin {
         if(reply.succeeded()){
 
           OutStream stream = new OutStream();
-          stream.setData(reply.result().getRows());
+          stream.setData(reply.result().toString());
 
           asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminTableIndexUsageResponse.
             respond200WithApplicationJson(stream)));
@@ -414,7 +416,7 @@ public class AdminAPI implements Admin {
           if(reply.succeeded()){
 
             OutStream stream = new OutStream();
-            stream.setData(reply.result().getRows());
+            stream.setData(reply.result().toString());
 
             asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminCacheHitRatesResponse.
               respond200WithApplicationJson(stream)));
@@ -445,7 +447,7 @@ public class AdminAPI implements Admin {
         if(reply.succeeded()){
 
           OutStream stream = new OutStream();
-          stream.setData(reply.result().getRows());
+          stream.setData(reply.result().toString());
 
           asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminSlowQueriesResponse.
             respond200WithApplicationJson(stream)));
@@ -496,7 +498,7 @@ public class AdminAPI implements Admin {
         if(reply.succeeded()){
 
           OutStream stream = new OutStream();
-          stream.setData(reply.result().getRows());
+          stream.setData(reply.result().toString());
 
           asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminTotalDbSizeResponse.
             respond200WithApplicationJson(stream)));
@@ -525,7 +527,7 @@ public class AdminAPI implements Admin {
               if(reply2.succeeded()){
 
                 OutStream stream = new OutStream();
-                stream.setData(reply2.result().getRows());
+                stream.setData(reply2.result().toString());
 
                 asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminDbCacheSummaryResponse.
                   respond200WithApplicationJson(stream)));
@@ -559,8 +561,8 @@ public class AdminAPI implements Admin {
         if(reply.succeeded()){
 
           OutStream stream = new OutStream();
-          stream.setData(reply.result().getResults());
-          System.out.println("locking q -> " + new io.vertx.core.json.JsonArray( reply.result().getResults() ).encode());
+          stream.setData(reply.result().toString());
+          System.out.println("locking q -> " + new io.vertx.core.json.JsonArray(reply.result().toString()).encode());
 
           asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(GetAdminListLockingQueriesResponse.
             respond200WithApplicationJson(stream)));
@@ -580,9 +582,8 @@ public class AdminAPI implements Admin {
     PostgresClient.getInstance(vertxContext.owner()).select(
       "SELECT pg_terminate_backend('"+pid+"');", reply -> {
         if(reply.succeeded()){
-          System.out.println("locking q -> " + reply.result().getResults().get(0).getBoolean(0));
-
-          if(false == (reply.result().getResults().get(0).getBoolean(0))){
+          System.out.println("locking q -> " + reply.result().iterator().next().getBoolean(0));
+          if (!reply.result().iterator().next().getBoolean(0)) {
             asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(DeleteAdminKillQueryResponse.respond404WithTextPlain(pid)));
           }
           else{
@@ -594,7 +595,6 @@ public class AdminAPI implements Admin {
           asyncResultHandler.handle(io.vertx.core.Future.failedFuture(reply.cause().getMessage()));
         }
     });
-
   }
 
   @Validate
@@ -625,7 +625,7 @@ public class AdminAPI implements Admin {
         if(reply.succeeded()){
 
           OutStream stream = new OutStream();
-          stream.setData(reply.result().getRows());
+          stream.setData(reply.result().toString());
 
           asyncResultHandler.handle(io.vertx.core.Future.succeededFuture(PostAdminPostgresMaintenanceResponse.
             respond201WithApplicationJson(stream)));
@@ -662,11 +662,12 @@ public class AdminAPI implements Admin {
       PostgresClient.getInstance(vertxContext.owner()).select(query, reply -> {
         if(reply.succeeded()){
           int indexes2delete[] = new int[]{ 0 };
-          ResultSet rs = reply.result();
-          List<JsonArray> rows = rs.getResults();
+          RowSet<Row> rs = reply.result();
           StringBuilder concatIndexNames = new StringBuilder();
-          for( int i=0; i< rows.size(); i++)  {
-            String indexName = rows.get(i).getString(0);
+          RowIterator<Row> iterator = rs.iterator();
+          while (iterator.hasNext()) {
+            Row row = iterator.next();
+            String indexName = row.getString(0);
             if(!indexName.endsWith("_pkey")){
               indexes2delete[0]++;
               if(concatIndexNames.length() > 0){
