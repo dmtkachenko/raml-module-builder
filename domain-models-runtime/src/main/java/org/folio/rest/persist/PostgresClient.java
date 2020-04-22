@@ -613,12 +613,15 @@ public class PostgresClient {
    * @param done - the result is the current connection
    */
   //@Timer
-  public void startTx(Handler<AsyncResult<Transaction>> done) {
-    client.begin(res -> {
+  public void startTx(Handler<AsyncResult<PgTransaction>> done) {
+    client.getConnection(res -> {
       if (res.failed()) {
         log.error(res.cause().getMessage(), res.cause());
+        done.handle(Future.failedFuture(res.cause()));
+        return;
       }
-      done.handle(res);
+      PgTransaction pgTransaction = new PgTransaction(res.result(), res.result().begin());
+      done.handle(Future.succeededFuture(pgTransaction));
     });
   }
 
@@ -626,13 +629,13 @@ public class PostgresClient {
    * Rollback a SQL transaction started on the connection. This closes the connection.
    *
    * @see #startTx(Handler)
-   * @param tx the connection with an open transaction
+   * @param trans the connection with an open transaction
    * @param done  success or failure
    */
   //@Timer
-  public void rollbackTx(Transaction tx, Handler<AsyncResult<Void>> done) {
-    tx.rollback(res -> {
-      tx.close();
+  public void rollbackTx(PgTransaction trans, Handler<AsyncResult<Void>> done) {
+    trans.tx.rollback(res -> {
+      trans.tx.close();
       if (res.failed()) {
         log.error(res.cause().getMessage(), res.cause());
       }
@@ -648,9 +651,9 @@ public class PostgresClient {
    * @param done  success or failure
    */
   //@Timer
-  public void endTx(Transaction tx, Handler<AsyncResult<Void>> done) {
-    tx.commit(res -> {
-      tx.close();
+  public void endTx(PgTransaction trans, Handler<AsyncResult<Void>> done) {
+    trans.tx.commit(res -> {
+      trans.tx.close();
       if (res.failed()) {
         log.error(res.cause().getMessage(), res.cause());
       }
@@ -2892,13 +2895,7 @@ public class PostgresClient {
    */
   @Deprecated
   public void mutate(String sql, Handler<AsyncResult<String>> replyHandler) {
-    execute(sql, res -> {
-      if (res.failed()) {
-        replyHandler.handle(Future.failedFuture(res.cause()));
-        return;
-      }
-      replyHandler.handle(Future.succeededFuture(res.result().toString()));
-    });
+    client.getConnection(conn -> mutate(conn, sql, closeAndHandleResult(conn, replyHandler)));
   }
 
   /**
@@ -2917,14 +2914,7 @@ public class PostgresClient {
    * @param replyHandler
    */
   public void execute(String sql, JsonArray params, Handler<AsyncResult<RowSet<Row>>> replyHandler)  {
-    long s = System.nanoTime();
-    client.getConnection(res -> {
-      if (res.failed()) {
-        replyHandler.handle(Future.failedFuture(res.cause()));
-        return;
-      }
-      execute(res, sql, params, replyHandler);
-    });
+    client.getConnection(conn -> execute(conn, sql, params, closeAndHandleResult(conn, replyHandler)));
   }
 
   /**
@@ -2985,9 +2975,13 @@ public class PostgresClient {
    */
   public void execute(AsyncResult<SqlConnection> conn, String sql, JsonArray params,
                       Handler<AsyncResult<RowSet<Row>>> replyHandler) {
-    SqlConnection connection = conn.result();
-    long s = System.nanoTime();
     try {
+      if (conn.failed()) {
+        replyHandler.handle(Future.failedFuture(conn.cause()));
+        return;
+      }
+      SqlConnection connection = conn.result();
+      long s = System.nanoTime();
       connection.preparedQuery(sql, Tuple.wrap(params.getList()), query -> {
         connection.close();
         if (query.failed()) {
@@ -2998,9 +2992,6 @@ public class PostgresClient {
         logTimer("executeWithParams", sql, s);
       });
     } catch (Exception e) {
-      if (connection != null) {
-        connection.close();
-      }
       log.error(e.getMessage(), e);
       replyHandler.handle(Future.failedFuture(e));
     }
@@ -3021,19 +3012,14 @@ public class PostgresClient {
    * @param params - there is one list entry for each sql invocation containing the parameters for the placeholders.
    * @param replyHandler - reply handler with one UpdateResult for each list entry of params.
    */
-  public void execute(AsyncResult<SqlConnection> conn, String sql, List<JsonArray> params,
-      Handler<AsyncResult<List<RowSet<Row>>>> replyHandler) {
-
-    Transaction tx = conn.result().begin();
-    executeT(tx, sql, params, res -> {
-      tx.commit();
-      replyHandler.handle(res);
-    });
-  }
-
-  private void executeT(Transaction tx, String sql, List<JsonArray> params,
+  private void execute(AsyncResult<SqlConnection> conn, String sql, List<JsonArray> params,
                         Handler<AsyncResult<List<RowSet<Row>>>> replyHandler) {
     try {
+      if (conn.failed()) {
+        replyHandler.handle(Future.failedFuture(conn.cause()));
+        return;
+      }
+      SqlConnection sqlConnection = conn.result();
       List<RowSet<Row>> results = new ArrayList<>(params.size());
       Iterator<JsonArray> iterator = params.iterator();
       Runnable task = new Runnable() {
@@ -3043,7 +3029,7 @@ public class PostgresClient {
             replyHandler.handle(Future.succeededFuture(results));
             return;
           }
-          tx.preparedQuery(sql, Tuple.wrap(iterator.next().getList()), query -> {
+          sqlConnection.preparedQuery(sql, Tuple.wrap(iterator.next().getList()), query -> {
             if (query.failed()) {
               replyHandler.handle(Future.failedFuture(query.cause()));
               return;
@@ -3076,8 +3062,8 @@ public class PostgresClient {
         replyHandler.handle(Future.failedFuture(res.cause()));
         return;
       }
-      Transaction tx = res.result();
-      executeT(tx, sql, params, result -> {
+      PgTransaction tx = res.result();
+      execute(tx.connection(), sql, params, result -> {
         if (result.failed()) {
           rollbackTx(tx, rollback -> replyHandler.handle(result));
           return;
