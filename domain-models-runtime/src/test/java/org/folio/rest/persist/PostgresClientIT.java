@@ -2045,7 +2045,7 @@ public class PostgresClientIT {
   @Test
   public void selectParam(TestContext context) {
     createNumbers(context, 7, 8, 9)
-    .select("SELECT i FROM numbers WHERE i IN (?, ?, ?) ORDER BY i",
+    .select("SELECT i FROM numbers WHERE i IN ($1, $2, $3) ORDER BY i",
         new JsonArray().add(7).add(9).add(11), context.asyncAssertSuccess(select -> {
           context.assertEquals("7, 9",  intsAsString(select));
         }));
