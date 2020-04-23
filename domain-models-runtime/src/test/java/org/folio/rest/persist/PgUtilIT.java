@@ -1205,7 +1205,7 @@ public class PgUtilIT {
         " SELECT md5(username)::uuid, json_build_object('username', username, 'id', md5(username)::uuid)" +
         "  FROM (SELECT '" + prefix + " ' || generate_series(1, " + n + ") AS username) AS subquery";
     pg.execute(sql, testContext.asyncAssertSuccess(updated -> {
-        testContext.assertEquals(n, updated.getUpdated());
+        testContext.assertEquals(n, updated.rowCount());
         async.complete();
       }));
     async.awaitSuccess(10000 /* ms */);

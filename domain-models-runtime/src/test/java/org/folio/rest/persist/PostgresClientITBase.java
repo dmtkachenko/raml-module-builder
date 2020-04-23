@@ -113,7 +113,7 @@ public class PostgresClientITBase {
   public static void executeSuperuser(TestContext context, String ... sqlStatements) {
     for (String sql : sqlStatements) {
       Async async = context.async();
-      PostgresClient.getInstance(vertx).getClient().querySingle(sql, reply -> {
+      PostgresClient.getInstance(vertx).getClient().query(sql, reply -> {
         if (reply.failed()) {
           context.fail(new RuntimeException(reply.cause().getMessage() + ". SQL: " + sql, reply.cause()));
         }
@@ -129,7 +129,7 @@ public class PostgresClientITBase {
   public static void executeSuperuserIgnore(TestContext context, String ... sqlStatements) {
     for (String sql : sqlStatements) {
       Async async = context.async();
-      PostgresClient.getInstance(vertx).getClient().querySingle(sql, reply -> {
+      PostgresClient.getInstance(vertx).getClient().query(sql, reply -> {
         async.complete();
       });
       async.await();

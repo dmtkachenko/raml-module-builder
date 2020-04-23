@@ -3012,8 +3012,8 @@ public class PostgresClient {
    * @param params - there is one list entry for each sql invocation containing the parameters for the placeholders.
    * @param replyHandler - reply handler with one UpdateResult for each list entry of params.
    */
-  private void execute(AsyncResult<SqlConnection> conn, String sql, List<JsonArray> params,
-                        Handler<AsyncResult<List<RowSet<Row>>>> replyHandler) {
+  public void execute(AsyncResult<SqlConnection> conn, String sql, List<JsonArray> params,
+                      Handler<AsyncResult<List<RowSet<Row>>>> replyHandler) {
     try {
       if (conn.failed()) {
         replyHandler.handle(Future.failedFuture(conn.cause()));
