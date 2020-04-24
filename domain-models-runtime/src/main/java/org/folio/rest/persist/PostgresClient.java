@@ -598,6 +598,25 @@ public class PostgresClient {
     throw new Exception("Entity can not be null");
   }
 
+  public static JsonObject pojo2JsonObject(Object entity) throws Exception {
+    // SimpleModule module = new SimpleModule();
+    // module.addSerializer(entity.getClass(), new PoJoJsonSerializer());
+    // mapper.registerModule(module);
+    if (entity != null) {
+      if (entity instanceof JsonObject) {
+        return ((JsonObject) entity);
+      } else {
+        try {
+          return new JsonObject(mapper.writeValueAsString(entity));
+        } catch (JsonProcessingException e) {
+          log.error(e.getMessage(), e);
+          throw e;
+        }
+      }
+    }
+    throw new Exception("Entity can not be null");
+  }
+
   /**
    * Start a SQL transaction.
    *
@@ -948,11 +967,11 @@ public class PostgresClient {
     try {
       long start = System.nanoTime();
       String sql = INSERT_CLAUSE + schemaName + DOT + table
-          + " (id, jsonb) VALUES ($1, $2::JSONB) RETURNING jsonb";
+          + " (id, jsonb) VALUES ($1, $2) RETURNING jsonb";
 
       sqlConnection.result().preparedQuery(sql,
           Tuple.of(id == null ? UUID.randomUUID() : UUID.fromString(id),
-          pojo2json(entity)), query -> {
+          pojo2JsonObject(entity)), query -> {
         statsTracker(SAVE_STAT_METHOD, table, start);
         if (query.failed()) {
           log.error(query.cause().getMessage(), query.cause());
@@ -961,7 +980,7 @@ public class PostgresClient {
         }
         try {
           RowSet<Row> result = query.result();
-          String updatedEntityString = result.iterator().next().toString();
+          String updatedEntityString = result.iterator().next().getValue(0).toString();
           @SuppressWarnings("unchecked")
           T updatedEntity = (T) mapper.readValue(updatedEntityString, entity.getClass());
           replyHandler.handle(Future.succeededFuture(updatedEntity));
