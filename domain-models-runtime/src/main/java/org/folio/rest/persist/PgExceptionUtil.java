@@ -86,14 +86,13 @@ public final class PgExceptionUtil {
     }
 
     String code = ((PgException) throwable).getCode();
-    Map<Character,String> fields = new HashMap<>();
-    String sqlstate = fields.get('C');
+    String sqlstate = ((PgException) throwable).getCode();
     if (sqlstate == null) {
       return null;
     }
 
-    String detail = fields.getOrDefault('D', "");
-    String message = fields.getOrDefault('M', "");
+    String detail = ((PgException) throwable).getDetail();
+    String message = ((PgException) throwable).getMessage();
     switch (sqlstate) {
     case FOREIGN_KEY_VIOLATION:
       // insert or update on table "item" violates foreign key constraint "item_permanentloantypeid_fkey":
@@ -109,12 +108,14 @@ public final class PgExceptionUtil {
     }
   }
 
-  public static Map<Character,String> getBadRequestFields(Throwable throwable) {
+  public static Map<Character, String> getBadRequestFields(Throwable throwable) {
     if (!(throwable instanceof PgException)) {
       return null;
     }
-
-    String code = ((PgException) throwable).getCode();
-    return new HashMap<>();
+    Map<Character, String> map = new HashMap<>();
+    map.put('M', ((PgException) throwable).getMessage());
+    map.put('D', ((PgException) throwable).getDetail());
+    map.put('C', ((PgException) throwable).getCode());
+    return map;
   }
 }
