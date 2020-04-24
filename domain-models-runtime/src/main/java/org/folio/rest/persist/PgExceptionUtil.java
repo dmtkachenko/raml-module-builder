@@ -81,18 +81,17 @@ public final class PgExceptionUtil {
    * @return detail text of the violation, or null if some other Exception
    */
   public static String badRequestMessage(Throwable throwable) {
-    if (!(throwable instanceof PgException)) {
+    Map<Character,String> fields = getBadRequestFields(throwable);
+    if (fields == null) {
       return null;
     }
-
-    String code = ((PgException) throwable).getCode();
-    String sqlstate = ((PgException) throwable).getCode();
+    String sqlstate = fields.get('C');
     if (sqlstate == null) {
       return null;
     }
+    String detail = fields.getOrDefault('D', "");
+    String message = fields.getOrDefault('M', "");
 
-    String detail = ((PgException) throwable).getDetail();
-    String message = ((PgException) throwable).getMessage();
     switch (sqlstate) {
     case FOREIGN_KEY_VIOLATION:
       // insert or update on table "item" violates foreign key constraint "item_permanentloantypeid_fkey":
