@@ -199,8 +199,11 @@ public class DemoRamlRestTest {
     ObjectMapper om = new ObjectMapper();
     String book = om.writerWithDefaultPrettyPrinter().writeValueAsString(b);
 
+    System.out.println("FIRST POST BEGIN");
     postData(context, "http://localhost:" + port + "/rmbtests/test", Buffer.buffer(book), 201,
       HttpMethod.POST, "application/json", TENANT, false);
+
+    System.out.println("FIRST POST END");
 
     buf = checkURLs(context, "http://localhost:" + port + "/rmbtests/test", 200);
     books = Json.decodeValue(buf, Books.class);

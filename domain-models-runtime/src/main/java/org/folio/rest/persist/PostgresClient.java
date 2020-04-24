@@ -492,7 +492,7 @@ public class PostgresClient {
     PgConnectOptions connectOptions = createPgConnectOptions(postgreSQLClientConfig);
 
     PoolOptions poolOptions = new PoolOptions().setMaxSize(5);
-    client = PgPool.pool(connectOptions, poolOptions);
+    client = PgPool.pool(vertx, connectOptions, poolOptions);
   }
 
   /**
@@ -647,7 +647,7 @@ public class PostgresClient {
    * Ends a SQL transaction (commit) started on the connection. This closes the connection.
    *
    * @see #startTx(Handler)
-   * @param tx  the connection with an open transaction
+   * @param trans  the connection with an open transaction
    * @param done  success or failure
    */
   //@Timer
@@ -937,7 +937,7 @@ public class PostgresClient {
   private <T> void saveAndReturnUpdatedEntity(AsyncResult<SqlConnection> sqlConnection, String table, String id, T entity,
       Handler<AsyncResult<T>> replyHandler) {
 
-    log.debug("save (with connection and id) called on " + table);
+    log.info("save (with connection and id) called on " + table);
 
     if (sqlConnection.failed()) {
       log.error(sqlConnection.cause().getMessage(), sqlConnection.cause());
@@ -949,9 +949,10 @@ public class PostgresClient {
       long start = System.nanoTime();
       String sql = INSERT_CLAUSE + schemaName + DOT + table
           + " (id, jsonb) VALUES ($1, $2::JSONB) RETURNING jsonb";
-      sqlConnection.result().preparedQuery(sql, Tuple.of(
-          id == null ? UUID.randomUUID().toString() : id,
-      pojo2json(entity)), query -> {
+
+      sqlConnection.result().preparedQuery(sql,
+          Tuple.of(id == null ? UUID.randomUUID() : UUID.fromString(id),
+          pojo2json(entity)), query -> {
         statsTracker(SAVE_STAT_METHOD, table, start);
         if (query.failed()) {
           log.error(query.cause().getMessage(), query.cause());
@@ -959,7 +960,7 @@ public class PostgresClient {
           return;
         }
         try {
-          RowSet result = query.result();
+          RowSet<Row> result = query.result();
           String updatedEntityString = result.iterator().next().toString();
           @SuppressWarnings("unchecked")
           T updatedEntity = (T) mapper.readValue(updatedEntityString, entity.getClass());
@@ -1772,7 +1773,18 @@ public class PostgresClient {
     return columns;
   }
 
-<T> void doStreamRowResults(RowStream<Row> sqlRowStream, Class<T> clazz,
+  private List<String> populateColumnNames(Row row)
+  {
+    int i = 0;
+    List<String> columnNames = new ArrayList<>();
+    while (row.getColumnName(i) != null) {
+      columnNames.add(row.getColumnName(i));
+      i++;
+    }
+    return columnNames;
+  }
+
+  <T> void doStreamRowResults(RowStream<Row> sqlRowStream, Class<T> clazz,
                             List<FacetField> facets, Transaction tx,
                             PostgresClientStreamResult<T> streamResult,
                             Handler<AsyncResult<PostgresClientStreamResult<T>>> replyHandler) {
@@ -1781,11 +1793,16 @@ public class PostgresClient {
     Promise<PostgresClientStreamResult<T>> promise = Promise.promise();
     ResultsHelper<T> resultsHelper = new ResultsHelper<>(sqlRowStream, clazz);
     boolean isAuditFlavored = isAuditFlavored(resultsHelper.clazz);
-    Map<String, Method> externalColumnSetters = getExternalColumnSetters(resultsHelper.columnNames,
-      resultsHelper.clazz, isAuditFlavored);
-    // fetch rows and produce ResultInfo when facets are all read
+    Map<String, Method> externalColumnSetters = new HashMap<>();
     sqlRowStream.handler(r -> {
       try {
+        // for first row, get column names
+        if (resultsHelper.offset == 0) {
+          List<String> columnNames = populateColumnNames(r);
+          getExternalColumnSetters(columnNames,
+              resultsHelper.clazz, isAuditFlavored, externalColumnSetters);
+        }
+
         T objRow = null;
         // deserializeRow can not determine if count or user object
         // in case where user T=Object
@@ -2386,7 +2403,6 @@ public class PostgresClient {
     final List<T> list;
     final Map<String, org.folio.rest.jaxrs.model.Facet> facets;
     final RowSet<Row> resultSet;
-    final List<String> columnNames;
     final Class<T> clazz;
     int total;
     int offset;
@@ -2395,7 +2411,6 @@ public class PostgresClient {
       this.list = new ArrayList<>();
       this.facets = new HashMap<>();
       this.resultSet = resultSet;
-      this.columnNames = resultSet.columnsNames();
       this.clazz= clazz;
       this.total = total;
       this.offset = 0;
@@ -2404,7 +2419,6 @@ public class PostgresClient {
       this.list = new ArrayList<>();
       this.facets = new HashMap<>();
       this.resultSet = null;
-      this.columnNames = null;
       this.clazz= clazz;
       this.offset = 0;
     }
@@ -2463,12 +2477,13 @@ public class PostgresClient {
 
     boolean isAuditFlavored = isAuditFlavored(resultsHelper.clazz);
 
-    Map<String, Method> externalColumnSetters = getExternalColumnSetters(
-      resultsHelper.columnNames,
-      resultsHelper.clazz,
-      isAuditFlavored
+    Map<String, Method> externalColumnSetters = new HashMap<>();
+    getExternalColumnSetters(
+        resultsHelper.resultSet.columnsNames(),
+        resultsHelper.clazz,
+        isAuditFlavored,
+        externalColumnSetters
     );
-
     RowIterator<Row> iterator = resultsHelper.resultSet.iterator();
     while (iterator.hasNext()) {
       Row row = iterator.next();
@@ -2565,10 +2580,11 @@ public class PostgresClient {
    * @param columnNames
    * @param clazz
    * @param isAuditFlavored
+   * @param externalColumnSetters
    * @return
    */
-  <T> Map<String, Method> getExternalColumnSetters(List<String> columnNames, Class<T> clazz, boolean isAuditFlavored) {
-    Map<String, Method> externalColumnSetters = new HashMap<>();
+  <T> void getExternalColumnSetters(List<String> columnNames, Class<T> clazz, boolean isAuditFlavored,
+                                    Map<String, Method> externalColumnSetters) {
     for (String columnName : columnNames) {
       if ((isAuditFlavored || !columnName.equals(DEFAULT_JSONB_FIELD_NAME)) && !columnName.equals(ID_FIELD)) {
         String methodName = databaseFieldToPojoSetter(columnName);
@@ -2579,7 +2595,6 @@ public class PostgresClient {
         }
       }
     }
-    return externalColumnSetters;
   }
 
   /**

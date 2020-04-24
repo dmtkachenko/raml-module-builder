@@ -69,11 +69,11 @@ public class UuidIT extends PostgresClientITBase {
     executeSuperuser(context, "CREATE TABLE " + t + " (uuid UUID PRIMARY KEY)");
     executeSuperuser(context, "INSERT INTO " + t + " VALUES (md5(generate_series(1, 1000)::text)::uuid)");
     getClient().select("EXPLAIN SELECT " + schema + ".min(uuid) FROM " + t, context.asyncAssertSuccess(result -> {
-      String explain = result.getResults().toString();
+      String explain = result.toString().toString();
       context.assertTrue(explain.contains("Index Only Scan using t_pkey on t"), explain);
     }));
     getClient().select("EXPLAIN SELECT " + schema + ".max(uuid) FROM " + t, context.asyncAssertSuccess(result -> {
-      String explain = result.getResults().toString();
+      String explain = result.toString();
       context.assertTrue(explain.contains("Index Only Scan Backward using t_pkey on t"), explain);
     }));
   }

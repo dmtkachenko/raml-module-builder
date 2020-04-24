@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -163,12 +164,13 @@ public class PostgresClientTest {
     List<String> columnNames = new ArrayList<String>(Arrays.asList(new String[] {
       "foo", "bar", "biz", "baz"
     }));
-    Map<String, Method> externalColumnSettters = testClient.getExternalColumnSetters(columnNames, TestPojo.class, false);
-    assertThat(externalColumnSettters.size(), is(4));
-    assertThat(externalColumnSettters.get("foo"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("foo"), String.class)));
-    assertThat(externalColumnSettters.get("bar"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("bar"), String.class)));
-    assertThat(externalColumnSettters.get("biz"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("biz"), Double.class)));
-    assertThat(externalColumnSettters.get("baz"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("baz"), List.class)));
+    Map<String, Method> externalColumnSetters = new HashMap<>();
+    testClient.getExternalColumnSetters(columnNames, TestPojo.class, false, externalColumnSetters);
+    assertThat(externalColumnSetters.size(), is(4));
+    assertThat(externalColumnSetters.get("foo"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("foo"), String.class)));
+    assertThat(externalColumnSetters.get("bar"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("bar"), String.class)));
+    assertThat(externalColumnSetters.get("biz"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("biz"), Double.class)));
+    assertThat(externalColumnSetters.get("baz"), is(TestPojo.class.getMethod(testClient.databaseFieldToPojoSetter("baz"), List.class)));
   }
 
   /* DISABLED

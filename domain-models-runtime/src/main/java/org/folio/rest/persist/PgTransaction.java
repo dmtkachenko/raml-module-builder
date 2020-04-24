@@ -14,7 +14,7 @@ public class PgTransaction {
     this.tx = tx;
   }
 
-  AsyncResult<SqlConnection> connection() {
+  public AsyncResult<SqlConnection> connection() {
     return Future.succeededFuture(conn);
   }
 }
