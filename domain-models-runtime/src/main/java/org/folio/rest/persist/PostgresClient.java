@@ -918,7 +918,7 @@ public class PostgresClient {
       }
       long start = System.nanoTime();
       String sql = INSERT_CLAUSE + schemaName + DOT + table
-          + " (id, jsonb) VALUES ($1, " + (convertEntity ? "$2::JSON" : "$2::text") + ")"
+          + " (id, jsonb) VALUES ($1, " + (convertEntity ? "$2" : "$2::text") + ")"
           + (upsert ? " ON CONFLICT (id) DO UPDATE SET jsonb=EXCLUDED.jsonb" : "")
           + " RETURNING " + (returnId ? "id" : "''");
       sqlConnection.result().preparedQuery(sql, Tuple.of(
@@ -931,7 +931,8 @@ public class PostgresClient {
         } else {
           try {
             RowSet<Row> result = query.result();
-            replyHandler.handle(Future.succeededFuture(result.iterator().next().getValue(0).toString()));
+            String res = result.iterator().next().getValue(0).toString();
+            replyHandler.handle(Future.succeededFuture(res));
           } catch (Exception e) {
             log.error(e.getMessage(), e);
             replyHandler.handle(Future.failedFuture(e));
@@ -1016,64 +1017,50 @@ public class PostgresClient {
       JsonArray entities, Handler<AsyncResult<RowSet<Row>>> replyHandler) {
 
     try {
-      JsonArray idEntityPairs = new JsonArray();
-      for (int i = 0; i < entities.size(); i++) {
-        String json = entities.getString(i);
-        JsonObject jsonObject = new JsonObject(json);
-        String id = jsonObject.getString("id");
-        if (id == null) {
-          id = UUID.randomUUID().toString();
+      List<Tuple> list = new ArrayList<>();
+      if (entities != null) {
+        for (int i = 0; i < entities.size(); i++) {
+          String json = entities.getString(i);
+          JsonObject jsonObject = new JsonObject(json);
+          String id = jsonObject.getString("id");
+          list.add(Tuple.of(id == null ? UUID.randomUUID() : UUID.fromString(id),
+              jsonObject));
         }
-        idEntityPairs.add(id).add(json);
       }
-      saveBatchInternal(sqlConnection, table, idEntityPairs, replyHandler);
+      saveBatchInternal(sqlConnection, table, list, replyHandler);
     } catch (Exception e) {
       log.error(e.getMessage(), e);
       replyHandler.handle(Future.failedFuture(e));
     }
   }
 
-  /**
-   * Insert the entities into table using a single INSERT statement.
-   * @param sqlConnection  the connection to run on, may be on a transaction
-   * @param table  destination table to insert into
-   * @param idEntityPairs  for each enity the array contains two strings: the id as a string and the entity as a JSON string.
-   * @param replyHandler  result, containing the id field for each inserted entity
-   */
   private void saveBatchInternal(AsyncResult<SqlConnection> sqlConnection, String table,
-      JsonArray idEntityPairs, Handler<AsyncResult<RowSet<Row>>> replyHandler) {
+                                  List<Tuple> batch, Handler<AsyncResult<RowSet<Row>>> replyHandler) {
 
     try {
       long start = System.nanoTime();
-      log.info("starting: saveBatch size=" + idEntityPairs.size());
+      log.info("starting: saveBatch size=" + batch.size());
       StringBuilder sql = new StringBuilder()
           .append(INSERT_CLAUSE)
           .append(schemaName).append(DOT).append(table)
-          .append(" (id, jsonb) VALUES ");
-      for (int i = 0; i < idEntityPairs.size(); i += 2) {
-        if (i > 0) {
-          sql.append(',');
-        }
-        sql.append("($" + (i + 1) + ",$" + (i + 2) + ")");
-      }
+          .append(" (id, jsonb) VALUES ($1, $2)");
       sql.append(RETURNING_ID);
-
       if (sqlConnection.failed()) {
         replyHandler.handle(Future.failedFuture(sqlConnection.cause()));
         return;
       }
       SqlConnection connection = sqlConnection.result();
-      connection.preparedQuery(sql.toString(), Tuple.of(idEntityPairs), queryRes -> {
+
+      connection.preparedBatch(sql.toString(), batch, queryRes -> {
         if (queryRes.failed()) {
-          log.error("saveBatch size=" + idEntityPairs.size()
-            + SPACE
-            + queryRes.cause().getMessage(),
-            queryRes.cause());
+          log.error("saveBatch size=" + batch.size()
+                  + SPACE
+                  + queryRes.cause().getMessage(),
+              queryRes.cause());
           statsTracker("saveBatchFailed", table, start);
           replyHandler.handle(Future.failedFuture(queryRes.cause()));
           return;
         }
-        log.info("success: saveBatch size=" + idEntityPairs.size());
         statsTracker("saveBatch", table, start);
         replyHandler.handle(Future.succeededFuture(queryRes.result()));
       });
@@ -1082,6 +1069,7 @@ public class PostgresClient {
       replyHandler.handle(Future.failedFuture(e));
     }
   }
+
 
   /***
    * Save a list of POJOs.
@@ -1110,22 +1098,22 @@ public class PostgresClient {
       List<T> entities, Handler<AsyncResult<RowSet<Row>>> replyHandler) {
 
     try {
+      List<Tuple> batch = new ArrayList<>();
       if (entities == null || entities.isEmpty()) {
-        saveBatchInternal(sqlConnection, table, null, replyHandler);
+        saveBatchInternal(sqlConnection, table, batch, replyHandler);
         return;
       }
-      JsonArray idEntityPairs = new JsonArray();
       // We must use reflection, the POJOs don't have a interface/superclass in common.
       Method getIdMethod = entities.get(0).getClass().getDeclaredMethod("getId");
       for (Object entity : entities) {
-        Object id = getIdMethod.invoke(entity);
+        UUID id = (UUID) getIdMethod.invoke(entity);
         if (id == null) {
           id = UUID.randomUUID();
         }
+        batch.add(Tuple.of(id, pojo2JsonObject(entity)));
         String json = pojo2json(entity);
-        idEntityPairs.add(id.toString()).add(json);
       }
-      saveBatchInternal(sqlConnection, table, idEntityPairs, replyHandler);
+      saveBatchInternal(sqlConnection, table, batch, replyHandler);
     } catch (Exception e) {
       log.error(e.getMessage(), e);
       replyHandler.handle(Future.failedFuture(e));
@@ -1449,7 +1437,7 @@ public class PostgresClient {
       }
       String sql = DELETE + FROM + schemaName + DOT + table + WHERE + DEFAULT_JSONB_FIELD_NAME + "@>$1";
       log.debug("delete by entity, query = " + sql + "; $1=" + entity);
-      connection.result().preparedQuery(sql, Tuple.of(entity), delete -> {
+      connection.result().preparedQuery(sql, Tuple.of(pojo2JsonObject(entity)), delete -> {
         statsTracker(DELETE_STAT_METHOD, table, start);
         if (delete.failed()) {
           log.error(delete.cause().getMessage(), delete.cause());
@@ -2354,17 +2342,21 @@ public class PostgresClient {
         replyHandler.handle(Future.failedFuture(res.cause()));
         return;
       }
+      Tuple list = Tuple.tuple();
+      for (int i = 0; i < ids.size(); i++) {
+        list.addUUID(UUID.fromString(ids.getString(i)));
+      }
+
       SqlConnection connection = res.result();
       StringBuilder sql = new StringBuilder()
           .append(SELECT).append(ID_FIELD).append(", ").append(DEFAULT_JSONB_FIELD_NAME)
           .append(FROM).append(schemaName).append(DOT).append(table)
           .append(WHERE).append(ID_FIELD).append(" IN ($1");
       for (int i = 2; i <= ids.size(); i++) {
-        sql.append(",$" + i);
+        sql.append(", $" + i);
       }
       sql.append(")");
-
-      connection.preparedQuery(sql.toString(), Tuple.wrap(ids.getList()), query -> {
+      connection.preparedQuery(sql.toString(), list, query -> {
         connection.close();
         if (query.failed()) {
           replyHandler.handle(Future.failedFuture(query.cause()));
@@ -2372,10 +2364,12 @@ public class PostgresClient {
         }
         try {
           Map<String,R> result = new HashMap<>();
+          log.fatal("count = " + query.result().rowCount());
           Iterator<Row> iterator = query.result().iterator();
           while (iterator.hasNext()) {
             Row row = iterator.next();
-            result.put(row.getString(0), function.apply(row.getString(1)));
+            log.fatal("getting row with id=" + row.getValue(0).toString());
+            result.put(row.getValue(0).toString(), function.apply(row.getValue(1).toString()));
           }
           replyHandler.handle(Future.succeededFuture(result));
         } catch (Exception e) {
@@ -2783,7 +2777,6 @@ public class PostgresClient {
    * @param replyHandler  The query result or the failure.
    */
   public void selectSingle(String sql, Handler<AsyncResult<JsonArray>> replyHandler) {
-    log.fatal("selectSingle 1");
     client.getConnection(conn -> selectSingle(conn, sql, closeAndHandleResult(conn, replyHandler)));
   }
 
@@ -2847,7 +2840,7 @@ public class PostgresClient {
         Row row = iterator.next();
         JsonArray ar = new JsonArray();
         for (int i = 0; row.getColumnName(i) != null; i++) {
-          ar.add(row.getValue(i).toString());
+          ar.add(row.getValue(i));
         }
         replyHandler.handle(Future.succeededFuture(ar));
       });
