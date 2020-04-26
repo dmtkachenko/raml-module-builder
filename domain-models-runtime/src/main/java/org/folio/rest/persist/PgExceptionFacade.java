@@ -23,9 +23,10 @@ public class PgExceptionFacade {
       return;
     }
 
-    String code  = ((PgException) throwable).getCode(); // getDetails or getSeverity
     fields = new HashMap<>();
-    // fields = errorMessage.getFields();
+    fields.put('M', ((PgException) throwable).getMessage());
+    fields.put('D', ((PgException) throwable).getDetail());
+    fields.put('C', ((PgException) throwable).getCode());
   }
 
   /**

@@ -13,6 +13,8 @@ import java.util.UUID;
 
 import javax.ws.rs.core.Response;
 
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
 import io.vertx.pgclient.PgException;
 import org.folio.rest.jaxrs.model.Error;
 import org.folio.rest.jaxrs.model.Errors;
@@ -45,6 +47,8 @@ import junit.framework.AssertionFailedError;
 
 @RunWith(VertxUnitRunner.class)
 public class PgUtilIT {
+  static Logger log = LoggerFactory.getLogger(PgUtilIT.class);
+
   @Rule
   public Timeout timeoutRule = Timeout.seconds(10);
 
@@ -318,7 +322,7 @@ public class PgUtilIT {
   public void deleteByIdNonexistingTable(TestContext testContext) {
     PgUtil.deleteById("otherTable", randomUuid(), okapiHeaders, vertx.getOrCreateContext(),
         Users.DeleteUsersByUserIdResponse.class,
-        asyncAssertSuccess(testContext, 500, "42P01"));
+        asyncAssertSuccess(testContext, 500, "does not exist"));
   }
 
   private void insertReferencing(TestContext testContext, String id, String userId) {

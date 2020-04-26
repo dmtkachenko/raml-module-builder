@@ -241,7 +241,7 @@ public final class PgUtil {
       Errors errors = ValidationHelper.createValidationErrorMessage(key, value, message);
       Response response = (Response) response422Method.invoke(null, errors);
       return Future.succeededFuture(response);
-    } catch (IllegalAccessException | InvocationTargetException e) {
+    } catch (IllegalAccessException | InvocationTargetException | NullPointerException e) {
       throw new IllegalArgumentException(e);
     }
   }
@@ -1108,7 +1108,7 @@ public final class PgUtil {
     RowIterator<Row> iterator = resultSet.iterator();
     while (iterator.hasNext()) {
       Row row = iterator.next();
-      String jsonb = row.getString(JSON_COLUMN);
+      String jsonb = row.getValue(JSON_COLUMN).toString();
       recordList.add(OBJECT_MAPPER.readValue(jsonb, clazz));
       totalRecords = row.getInteger("count");
     }

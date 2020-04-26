@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
 import org.folio.rest.persist.ddlgen.Schema;
 import org.folio.rest.persist.ddlgen.SchemaMaker;
 import org.folio.rest.persist.ddlgen.TenantOperation;
@@ -23,6 +25,7 @@ public class PostgresClientITBase {
   protected static Map<String,String> okapiHeaders;
   protected static String schema;
   protected static Vertx vertx;
+  static Logger log = LoggerFactory.getLogger(PostgresClientITBase.class);
 
   static {
     setTenant("sometenant");

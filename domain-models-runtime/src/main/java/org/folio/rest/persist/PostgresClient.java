@@ -922,8 +922,8 @@ public class PostgresClient {
           + (upsert ? " ON CONFLICT (id) DO UPDATE SET jsonb=EXCLUDED.jsonb" : "")
           + " RETURNING " + (returnId ? "id" : "''");
       sqlConnection.result().preparedQuery(sql, Tuple.of(
-          id == null ? UUID.randomUUID().toString() : id,
-          convertEntity ? pojo2json(entity) : ((JsonArray)entity).getBinary(0)
+          id == null ? UUID.randomUUID() : UUID.fromString(id),
+          convertEntity ? pojo2JsonObject(entity) : ((JsonArray)entity).getBinary(0)
       ), query -> {
         statsTracker(SAVE_STAT_METHOD, table, start);
         if (query.failed()) {
@@ -1248,9 +1248,9 @@ public class PostgresClient {
         String q = UPDATE + schemaName + DOT + table + SET + jsonbField + " = $1::jsonb " + whereClause
           + SPACE + returning;
         log.debug("update query = " + q);
-        String pojo = pojo2json(entity);
+        JsonObject pojo = pojo2JsonObject(entity);
         SqlConnection result = conn.result();
-        conn.result().preparedQuery(q, Tuple.of(entity), query -> {
+        conn.result().preparedQuery(q, Tuple.of(pojo), query -> {
           if (query.failed()) {
             log.error(query.cause().getMessage(), query.cause());
           }
@@ -1370,7 +1370,7 @@ public class PostgresClient {
       }
       connection.result().preparedQuery(
           "DELETE FROM " + schemaName + DOT + table + WHERE + ID_FIELD + "=$1",
-          Tuple.of(id), replyHandler);
+          Tuple.of(UUID.fromString(id)), replyHandler);
     } catch (Exception e) {
       replyHandler.handle(Future.failedFuture(e));
     }
@@ -2277,7 +2277,7 @@ public class PostgresClient {
       String sql = SELECT + DEFAULT_JSONB_FIELD_NAME
           + FROM + schemaName + DOT + table
           + WHERE + ID_FIELD + "= $1";
-      connection.preparedQuery(sql, Tuple.of(id), query -> {
+      connection.preparedQuery(sql, Tuple.of(UUID.fromString(id)), query -> {
         connection.close();
         if (query.failed()) {
           replyHandler.handle(Future.failedFuture(query.cause()));
@@ -2289,7 +2289,8 @@ public class PostgresClient {
           return;
         }
         try {
-          R r = function.apply(result.iterator().next().getString(0));
+          String entity = result.iterator().next().getValue(0).toString();
+          R r = function.apply(entity);
           replyHandler.handle(Future.succeededFuture(r));
         } catch (Exception e) {
           replyHandler.handle(Future.failedFuture(e));
@@ -2782,6 +2783,7 @@ public class PostgresClient {
    * @param replyHandler  The query result or the failure.
    */
   public void selectSingle(String sql, Handler<AsyncResult<JsonArray>> replyHandler) {
+    log.fatal("selectSingle 1");
     client.getConnection(conn -> selectSingle(conn, sql, closeAndHandleResult(conn, replyHandler)));
   }
 
@@ -2843,7 +2845,11 @@ public class PostgresClient {
           return;
         }
         Row row = iterator.next();
-        Future.succeededFuture(row.getValue(0));
+        JsonArray ar = new JsonArray();
+        for (int i = 0; row.getColumnName(i) != null; i++) {
+          ar.add(row.getValue(i).toString());
+        }
+        replyHandler.handle(Future.succeededFuture(ar));
       });
     } catch (Exception e) {
       log.error("select single sql: " + e.getMessage() + " - " + sql, e);
@@ -3017,7 +3023,6 @@ public class PostgresClient {
       SqlConnection connection = conn.result();
       long s = System.nanoTime();
       connection.preparedQuery(sql, Tuple.wrap(params.getList()), query -> {
-        connection.close();
         if (query.failed()) {
           replyHandler.handle(Future.failedFuture(query.cause()));
         } else {
