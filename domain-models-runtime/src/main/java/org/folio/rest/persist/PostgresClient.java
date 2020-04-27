@@ -22,7 +22,6 @@ import java.util.regex.Pattern;
 
 import javax.crypto.SecretKey;
 
-import io.vertx.sqlclient.Pool;
 import io.vertx.sqlclient.PoolOptions;
 import io.vertx.sqlclient.PreparedQuery;
 import io.vertx.sqlclient.RowIterator;
@@ -639,8 +638,13 @@ public class PostgresClient {
         done.handle(Future.failedFuture(res.cause()));
         return;
       }
-      PgTransaction pgTransaction = new PgTransaction(res.result(), res.result().begin());
-      done.handle(Future.succeededFuture(pgTransaction));
+      try {
+        PgTransaction pgTransaction = new PgTransaction(res.result(), res.result().begin());
+        done.handle(Future.succeededFuture(pgTransaction));
+      } catch (Exception e) {
+        log.error(e.getMessage(), e);
+        done.handle(Future.failedFuture(e.getCause()));
+      }
     });
   }
 
@@ -653,13 +657,21 @@ public class PostgresClient {
    */
   //@Timer
   public void rollbackTx(PgTransaction trans, Handler<AsyncResult<Void>> done) {
-    trans.tx.rollback(res -> {
-      trans.tx.close();
-      if (res.failed()) {
-        log.error(res.cause().getMessage(), res.cause());
-      }
-      done.handle(res);
-    });
+    log.fatal("rollBackTx");
+    try {
+      trans.tx.rollback(res -> {
+        log.fatal("rollBackTx 2");
+        // trans.tx.close();
+        if (res.failed()) {
+          log.error("X: " + res.cause().getMessage(), res.cause());
+        }
+        log.fatal("rollBackTx 3");
+        done.handle(res);
+      });
+    } catch (Exception e) {
+      log.error(e.getMessage(), e);
+      done.handle(Future.failedFuture(e.getCause()));
+    }
   }
 
   /**
@@ -923,7 +935,7 @@ public class PostgresClient {
           + " RETURNING " + (returnId ? "id" : "''");
       sqlConnection.result().preparedQuery(sql, Tuple.of(
           id == null ? UUID.randomUUID() : UUID.fromString(id),
-          convertEntity ? pojo2JsonObject(entity) : ((JsonArray)entity).getBinary(0)
+          convertEntity ? pojo2JsonObject(entity) : ((JsonArray)entity).getString(0)
       ), query -> {
         statsTracker(SAVE_STAT_METHOD, table, start);
         if (query.failed()) {
@@ -2761,7 +2773,7 @@ public class PostgresClient {
         replyHandler.handle(Future.failedFuture(conn.cause()));
         return;
       }
-      conn.result().preparedQuery(sql, Tuple.wrap(params.getList()), replyHandler);
+      conn.result().preparedQuery(legacySql(sql, params), Tuple.wrap(params.getList()), replyHandler);
     } catch (Exception e) {
       log.error("select sql: " + e.getMessage() + " - " + sql, e);
       replyHandler.handle(Future.failedFuture(e));
@@ -2808,6 +2820,31 @@ public class PostgresClient {
     client.getConnection(conn -> selectSingle(conn, sql, params, closeAndHandleResult(conn, replyHandler)));
   }
 
+  private static String legacySql(String sql, JsonArray params) {
+    if (params.isEmpty()) {
+      return sql;
+    }
+    StringBuilder preparedSql = new StringBuilder();
+    int pos = 1;
+    for (int i = 0; i < sql.length(); i++) {
+      if (sql.charAt(i) =='?' && (i == sql.length() -1 || sql.charAt(i+1) != '?')) {
+        preparedSql.append("$" + pos);
+        pos++;
+      } else {
+        preparedSql.append(sql.charAt(i));
+      }
+    }
+    return preparedSql.toString();
+  }
+
+  private static Tuple legacyArguments(JsonArray params) {
+    Tuple tuple = Tuple.tuple();
+    for (int i = 0; i < params.size(); i++) {
+      tuple.addUUID(UUID.fromString(params.getString(i)));
+    }
+    return tuple;
+  }
+
   /**
    * Run a parameterized/prepared select query and return the first record, or null if there is no result.
    *
@@ -2827,7 +2864,7 @@ public class PostgresClient {
         replyHandler.handle(Future.failedFuture(conn.cause()));
         return;
       }
-      conn.result().preparedQuery(sql, Tuple.wrap(params.getList()), res -> {
+      conn.result().preparedQuery(legacySql(sql, params), Tuple.wrap(params.getList()), res -> {
         if (res.failed()) {
           replyHandler.handle(Future.failedFuture(res.cause()));
           return;
@@ -2903,14 +2940,14 @@ public class PostgresClient {
         return;
       }
       SqlConnection connection = conn.result();
-      connection.prepare(sql, res -> {
+      connection.prepare(legacySql(sql, params), res -> {
         if (res.failed()) {
           log.error(res.cause().getMessage(), res.cause());
           replyHandler.handle(Future.failedFuture(res.cause()));
           return;
         }
         PreparedQuery pq = res.result();
-        Transaction tx = connection.begin(); // transaction not returned, so it can't be committed
+        // should be in a transaction Transaction tx = connection.begin();
         RowStream<Row> rowStream = pq.createStream(50, Tuple.wrap(params.getList()));
         replyHandler.handle(Future.succeededFuture(rowStream));
       });
@@ -3015,7 +3052,8 @@ public class PostgresClient {
       }
       SqlConnection connection = conn.result();
       long s = System.nanoTime();
-      connection.preparedQuery(sql, Tuple.wrap(params.getList()), query -> {
+      log.fatal("SQL=" + legacySql(sql, params));
+      connection.preparedQuery(legacySql(sql, params), legacyArguments(params), query -> {
         if (query.failed()) {
           replyHandler.handle(Future.failedFuture(query.cause()));
         } else {
@@ -3061,7 +3099,8 @@ public class PostgresClient {
             replyHandler.handle(Future.succeededFuture(results));
             return;
           }
-          sqlConnection.preparedQuery(sql, Tuple.wrap(iterator.next().getList()), query -> {
+          JsonArray params1 = iterator.next();
+          sqlConnection.preparedQuery(legacySql(sql, params1), legacyArguments(params1), query -> {
             if (query.failed()) {
               replyHandler.handle(Future.failedFuture(query.cause()));
               return;
