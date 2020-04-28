@@ -1837,7 +1837,7 @@ public class PostgresClient {
           promise.complete(streamResult);
           replyHandler.handle(promise.future());
         }
-        sqlRowStream.close();
+        sqlRowStream.close(); // does not really stop stream for vertx-pg-client
         tx.commit();
         log.error(e.getMessage(), e);
         streamResult.fireExceptionHandler(e);
