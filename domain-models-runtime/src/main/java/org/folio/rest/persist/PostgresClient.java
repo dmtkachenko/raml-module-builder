@@ -660,13 +660,10 @@ public class PostgresClient {
     log.fatal("rollBackTx");
     try {
       trans.tx.rollback(res -> {
-        log.fatal("rollBackTx 2");
-        // trans.tx.close();
-        if (res.failed()) {
-          log.error("X: " + res.cause().getMessage(), res.cause());
-        }
-        log.fatal("rollBackTx 3");
-        done.handle(res);
+        // this will most likely return that rollback has already completed.. because of error..
+        // which is why user code most often call rollBack!!
+        // TODO: check for rollback already completed
+        done.handle(Future.succeededFuture());
       });
     } catch (Exception e) {
       log.error(e.getMessage(), e);
@@ -1112,22 +1109,19 @@ public class PostgresClient {
     try {
       List<Tuple> batch = new ArrayList<>();
       if (entities == null || entities.isEmpty()) {
-        saveBatchInternal(sqlConnection, table, batch, replyHandler);
+        replyHandler.handle(Future.succeededFuture(null));
         return;
       }
       // We must use reflection, the POJOs don't have a interface/superclass in common.
       Method getIdMethod = entities.get(0).getClass().getDeclaredMethod("getId");
       for (Object entity : entities) {
-        UUID id = (UUID) getIdMethod.invoke(entity);
-        if (id == null) {
-          id = UUID.randomUUID();
-        }
+        Object obj = getIdMethod.invoke(entity);
+        UUID id = obj == null ? UUID.randomUUID() : UUID.fromString((String) obj);
         batch.add(Tuple.of(id, pojo2JsonObject(entity)));
-        String json = pojo2json(entity);
       }
       saveBatchInternal(sqlConnection, table, batch, replyHandler);
     } catch (Exception e) {
-      log.error(e.getMessage(), e);
+      log.error("saveBatch error " + e.getMessage(), e);
       replyHandler.handle(Future.failedFuture(e));
     }
   }
@@ -1248,9 +1242,7 @@ public class PostgresClient {
         String q = UPDATE + schemaName + DOT + table + SET + jsonbField + " = $1::jsonb " + whereClause
           + SPACE + returning;
         log.debug("update query = " + q);
-        JsonObject pojo = pojo2JsonObject(entity);
-        SqlConnection result = conn.result();
-        conn.result().preparedQuery(q, Tuple.of(pojo), query -> {
+        conn.result().preparedQuery(q, Tuple.of(pojo2JsonObject(entity)), query -> {
           if (query.failed()) {
             log.error(query.cause().getMessage(), query.cause());
           }

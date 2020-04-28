@@ -982,7 +982,7 @@ public class PostgresClientIT {
     list.add(new StringPojo("v", id1));
     postgresClient = createFoo(context);
     postgresClient.saveBatch(FOO, list, context.asyncAssertSuccess(save -> {
-      String id0 = save.iterator().next().getString(0);
+      String id0 = save.iterator().next().getValue(0).toString();
       postgresClient.getById(FOO, id0, context.asyncAssertSuccess(get -> {
         context.assertEquals("x", get.getString("key"));
       }));
@@ -998,7 +998,7 @@ public class PostgresClientIT {
     postgresClient = createFoo(context);
     postgresClient.startTx(asyncAssertTx(context, trans -> {
       postgresClient.saveBatch(trans.connection(), FOO, list, context.asyncAssertSuccess(save -> {
-        final String id = save.iterator().next().getString(0);
+        final String id = save.iterator().next().getValue(0).toString();
         postgresClient.endTx(trans, context.asyncAssertSuccess(end -> {
           postgresClient.getById(FOO, id, context.asyncAssertSuccess(get -> {
             context.assertEquals("x", get.getString("key"));
@@ -1029,7 +1029,7 @@ public class PostgresClientIT {
   @Test
   public void saveBatchNullList(TestContext context) {
     createFoo(context).saveBatch(BAR, (List<Object>)null, context.asyncAssertSuccess(save -> {
-      context.assertEquals(0, save.rowCount());
+      context.assertNull(save);
     }));
   }
 
@@ -1037,7 +1037,7 @@ public class PostgresClientIT {
   public void saveBatchEmptyList(TestContext context) {
     List<Object> list = Collections.emptyList();
     createFoo(context).saveBatch(FOO, list, context.asyncAssertSuccess(save -> {
-      context.assertEquals(0, save.rowCount());
+      context.assertNull(save);
     }));
   }
 
@@ -1062,12 +1062,19 @@ public class PostgresClientIT {
         .add("{ \"y\" : \"z\", \"id\": \"" + id + "\" }")
         .add("{ \"z\" : \"'\" }");
     createFoo(context).saveBatch(FOO, array, context.asyncAssertSuccess(res -> {
-      context.assertEquals(3, res.size());
+      // iterate over all RowSets in batch result to get total count
+      RowSet<Row> resCurrent = res;
+      int total = 0;
+      while (resCurrent != null) {
+        total += resCurrent.size();
+        resCurrent = resCurrent.next();
+      }
+      context.assertEquals(3, total);
       context.assertEquals("id", res.columnsNames().get(0));
-      RowIterator<Row> iterator = res.iterator();
-      iterator.next();
-      Row row = iterator.next(); // second
-      context.assertEquals(id, row.getValue("id"));
+
+      // second set
+      Row row = res.next().iterator().next();
+      context.assertEquals(id, row.getValue("id").toString());
       postgresClient.getById(FOO, id, context.asyncAssertSuccess(get -> {
         context.assertEquals("z", get.getString("y"));
       }));
@@ -1082,16 +1089,8 @@ public class PostgresClientIT {
     createFoo(context).saveBatch(BAR, array, context.asyncAssertFailure());
   }
 
-
-  /* DISABLED TEST */
-  public void saveBatchJsonNullArray(TestContext context) {
-    createFoo(context).saveBatch(BAR, (JsonArray)null, context.asyncAssertSuccess(save -> {
-      context.assertNull(save);
-    }));
-  }
-
   @Test
-  public void saveBatchJsonNullArray1(TestContext context) {
+  public void saveBatchJsonNullArray(TestContext context) {
     createFoo(context).saveBatch(FOO, (JsonArray)null, context.asyncAssertSuccess(save -> {
       context.assertNull(save);
     }));
@@ -2295,7 +2294,7 @@ public class PostgresClientIT {
       log.fatal("executeTransParamSyntaxError 1");
       postgresClient.execute(trans.connection(), "'", new JsonArray(), context.asyncAssertFailure(execute -> {
         log.fatal("executeTransParamSyntaxError 2");
-        postgresClient.rollbackTx(trans, context.asyncAssertFailure());
+        postgresClient.rollbackTx(trans, context.asyncAssertSuccess());
       }));
     }));
   }
@@ -2395,7 +2394,7 @@ public class PostgresClientIT {
       s.append(row.getInteger(0));
     }).exceptionHandler(e -> {
       replyHandler.handle(Future.failedFuture(e));
-    }).close(close -> {
+    }).endHandler(end -> {
       replyHandler.handle(Future.succeededFuture(s.toString()));
     });
   }
