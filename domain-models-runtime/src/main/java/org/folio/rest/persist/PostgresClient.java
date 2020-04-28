@@ -1862,16 +1862,6 @@ public class PostgresClient {
     });
   }
 
-  private JsonObject convertRowStreamArrayToObject(Row row) {
-    JsonObject o = new JsonObject();
-    int i = 0;
-    while (row.getColumnName(i) != null) {
-      o.put(row.getColumnName(i), row.getValue(i));
-      i++;
-    }
-    return o;
-  }
-
   QueryHelper buildQueryHelper(
     String table, String fieldName, CQLWrapper wrapper,
     boolean returnIdField, List<FacetField> facets,
@@ -2368,11 +2358,9 @@ public class PostgresClient {
         }
         try {
           Map<String,R> result = new HashMap<>();
-          log.fatal("count = " + query.result().rowCount());
           Iterator<Row> iterator = query.result().iterator();
           while (iterator.hasNext()) {
             Row row = iterator.next();
-            log.fatal("getting row with id=" + row.getValue(0).toString());
             result.put(row.getValue(0).toString(), function.apply(row.getValue(1).toString()));
           }
           replyHandler.handle(Future.succeededFuture(result));
@@ -2493,6 +2481,9 @@ public class PostgresClient {
    */
   <T> void deserializeResults(ResultsHelper<T> resultsHelper) {
 
+    if (resultsHelper.resultSet == null) {
+      return;
+    }
     boolean isAuditFlavored = isAuditFlavored(resultsHelper.clazz);
 
     Map<String, Method> externalColumnSetters = new HashMap<>();
@@ -2850,7 +2841,7 @@ public class PostgresClient {
    * @param replyHandler  The query result or the failure.
    */
   public void selectSingle(AsyncResult<SqlConnection> conn, String sql, JsonArray params,
-      Handler<AsyncResult<JsonArray>> replyHandler) {
+                           Handler<AsyncResult<JsonArray>> replyHandler) {
     try {
       if (conn.failed()) {
         replyHandler.handle(Future.failedFuture(conn.cause()));
@@ -2866,12 +2857,22 @@ public class PostgresClient {
           Future.succeededFuture(null);
           return;
         }
-        Row row = iterator.next();
-        JsonArray ar = new JsonArray();
-        for (int i = 0; row.getColumnName(i) != null; i++) {
-          ar.add(row.getValue(i));
+        try {
+          Row row = iterator.next();
+          JsonArray ar = new JsonArray();
+          for (int i = 0; i < row.size(); i++) {
+            Object obj = row.getValue(i);
+            if (obj instanceof java.util.UUID) {
+              ar.add(obj.toString());
+            } else {
+              ar.add(obj);
+            }
+          }
+          replyHandler.handle(Future.succeededFuture(ar));
+        } catch (Exception e) {
+          log.error("select single sql: " + e.getMessage() + " - " + sql, e);
+          replyHandler.handle(Future.failedFuture(e));
         }
-        replyHandler.handle(Future.succeededFuture(ar));
       });
     } catch (Exception e) {
       log.error("select single sql: " + e.getMessage() + " - " + sql, e);
