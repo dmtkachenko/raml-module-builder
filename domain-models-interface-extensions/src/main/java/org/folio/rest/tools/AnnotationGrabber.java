@@ -1,5 +1,9 @@
 package org.folio.rest.tools;
 
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
@@ -7,25 +11,22 @@ import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
-
-import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.reflect.ClassPath;
-
-import io.vertx.core.json.JsonArray;
-import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.burningwave.core.assembler.ComponentContainer;
+import org.burningwave.core.assembler.ComponentSupplier;
+import org.burningwave.core.classes.CacheableSearchConfig;
+import org.burningwave.core.classes.ClassCriteria;
+import org.burningwave.core.classes.ClassHunter;
+import org.burningwave.core.classes.SearchConfig;
+import org.burningwave.core.io.PathHelper;
 
 public class AnnotationGrabber {
   public static final String  DELIMITER              = "&!!&";
@@ -72,18 +73,10 @@ public class AnnotationGrabber {
     JsonObject globalClassMapping = new JsonObject();
 
     // get classes in generated package
-    ClassPath classPath = ClassPath.from(Thread.currentThread().getContextClassLoader());
-    ImmutableSet<ClassPath.ClassInfo> classes = classPath.getTopLevelClasses(RTFConsts.INTERFACE_PACKAGE);
-    Collection<Object> classNames = Collections2.transform(classes, new Function<ClassPath.ClassInfo, Object>() {
-      @Override
-      public Object apply(ClassPath.ClassInfo input) {
-        log.info("Mapping functions in " + input.getName() +" class to appropriate urls");
-        return input.getName(); // not needed - dont need transform function,
-                                // remove
-      }
-    });
+    Collection<Class<?>> classes = findTopLevelClassesInPackage(RTFConsts.INTERFACE_PACKAGE);
+
     // loop over all the classes from the package
-    classNames.forEach(val -> {
+    classes.forEach(clazz -> {
       try {
 
         ClientGenerator cGen = new ClientGenerator();
@@ -94,10 +87,10 @@ public class AnnotationGrabber {
         // will contain all mappings for a specific class in the package
         JsonObject classSpecificMapping = new JsonObject();
         // get annotations via reflection for a class
-        Annotation[] annotations = Class.forName(val.toString()).getAnnotations();
+        Annotation[] annotations = clazz.getAnnotations();
         // create an entry for the class name = ex. "class":"com.sling.rest.jaxrs.resource.BibResource"
-        classSpecificMapping.put(CLASS_NAME, val.toString());
-        classSpecificMapping.put(INTERFACE_NAME, val.toString());
+        classSpecificMapping.put(CLASS_NAME, clazz.getName());
+        classSpecificMapping.put(INTERFACE_NAME, clazz.getName());
 
         // loop over all the annotations for the class in order to add the
         // needed info - these are class level annotation - not method level
@@ -113,7 +106,7 @@ public class AnnotationGrabber {
             if (type.isAssignableFrom(Path.class)) {
               classSpecificMapping.put(CLASS_URL, "^" + value);
               if (generateClient){
-                cGen.generateClassMeta(val.toString());
+                cGen.generateClassMeta(clazz.getName());
               }
             }
           }
@@ -124,7 +117,7 @@ public class AnnotationGrabber {
 
         JsonArray methodsInAPath;
         // iterate over all functions in the class
-        Method[] inputMethods = Class.forName(val.toString()).getMethods();
+        Method[] inputMethods = clazz.getMethods();
         // sort generated methods to allow comparing generated file with previous versions
         Arrays.sort(inputMethods, Comparator.comparing(Method::toGenericString));
         for (Method inputMethod : inputMethods) {
@@ -215,6 +208,7 @@ public class AnnotationGrabber {
         log.error(e.getMessage(), e);
       }
     });
+
     return globalClassMapping;
   }
 
@@ -224,10 +218,10 @@ public class AnnotationGrabber {
 
     Parameter[] nonAnnotationParams = method.getParameters();
     Annotation[][] annotations = method.getParameterAnnotations();
-    Class[] parameterTypes = method.getParameterTypes();
+    Class<?>[] parameterTypes = method.getParameterTypes();
     int k = 0;
     for (Annotation[] annotation : annotations) {
-      Class parameterType = parameterTypes[k++];
+      Class<?> parameterType = parameterTypes[k++];
       if (annotation.length == 0) {
         // we are here because - there is a param but it is not annotated - this
         // will occur for post / put
@@ -288,6 +282,23 @@ public class AnnotationGrabber {
     return retObject;
   }
 
+  private static Collection<Class<?>> findTopLevelClassesInPackage(String packageName) {
+    try (ClassCriteria packageCriteria = ClassCriteria.create()
+        .allThat(clazz -> clazz.getPackage().getName().equals(packageName))) {
+
+      ComponentSupplier componentSupplier = ComponentContainer.getInstance();
+      PathHelper pathHelper = componentSupplier.getPathHelper();
+
+      CacheableSearchConfig searchConfig = SearchConfig.forPaths(pathHelper.getMainClassPaths()).by(packageCriteria);
+
+      ClassHunter classHunter = componentSupplier.getClassHunter();
+      ClassHunter.SearchResult searchResult = classHunter.loadInCache(searchConfig).find();
+
+      Collection<Class<?>> classes = searchResult.getClasses();
+      return classes != null ? classes : Collections.emptyList();
+    }
+  }
+
   private static boolean isPossibleHttpMethod(String method) {
     switch (method) {
     case "javax.ws.rs.PUT":
@@ -320,7 +331,5 @@ public class AnnotationGrabber {
     regexPath = regexPath.concat("$");
     return regexPath;
   }
-
-
 
 }
