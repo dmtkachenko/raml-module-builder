@@ -25,6 +25,11 @@
       </exclusions>
     </dependency>
     <dependency>
+      <groupId>org.burningwave</groupId>
+      <artifactId>core</artifactId>
+      <version>7.22.1</version>
+    </dependency>
+    <dependency>
       <groupId>org.folio</groupId>
       <artifactId>domain-models-api-aspects</artifactId>
       <version>${project.parent.version}</version>
