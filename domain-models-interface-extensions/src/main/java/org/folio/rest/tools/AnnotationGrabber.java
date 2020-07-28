@@ -292,7 +292,7 @@ public class AnnotationGrabber {
       ComponentSupplier componentSupplier = ComponentContainer.getInstance();
       PathHelper pathHelper = componentSupplier.getPathHelper();
 
-      CacheableSearchConfig searchConfig = SearchConfig.forPaths(pathHelper.getMainClassPaths()).by(packageCriteria);
+      CacheableSearchConfig searchConfig = SearchConfig.forPaths(pathHelper.getAllPaths()).by(packageCriteria);
 
       ClassHunter classHunter = componentSupplier.getClassHunter();
       ClassHunter.SearchResult searchResult = classHunter.loadInCache(searchConfig).find();
