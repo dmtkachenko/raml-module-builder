@@ -80,16 +80,7 @@ public class AnnotationGrabber {
     JsonObject globalClassMapping = new JsonObject();
 
     // get classes in generated package
-    ClassPath classPath = ClassPath.from(Thread.currentThread().getContextClassLoader());
-    ImmutableSet<ClassPath.ClassInfo> classes = classPath.getTopLevelClasses(RTFConsts.INTERFACE_PACKAGE);
-    Collection<Object> classNames = Collections2.transform(classes, new Function<ClassPath.ClassInfo, Object>() {
-      @Override
-      public Object apply(ClassPath.ClassInfo input) {
-        log.info("Mapping functions in " + input.getName() +" class to appropriate urls");
-        return input.getName(); // not needed - dont need transform function,
-        // remove
-      }
-    });
+    Collection<Class<?>> classes = findTopLevelClassesInPackage(RTFConsts.INTERFACE_PACKAGE);
 
     // loop over all the classes from the package
     classes.forEach(clazz -> {
@@ -103,7 +94,7 @@ public class AnnotationGrabber {
         // will contain all mappings for a specific class in the package
         JsonObject classSpecificMapping = new JsonObject();
         // get annotations via reflection for a class
-        Annotation[] annotations = Class.forName(clazz.toString()).getAnnotations();
+        Annotation[] annotations = clazz.getAnnotations();
         // create an entry for the class name = ex. "class":"com.sling.rest.jaxrs.resource.BibResource"
         classSpecificMapping.put(CLASS_NAME, clazz.getName());
         classSpecificMapping.put(INTERFACE_NAME, clazz.getName());
@@ -133,7 +124,7 @@ public class AnnotationGrabber {
 
         JsonArray methodsInAPath;
         // iterate over all functions in the class
-        Method[] inputMethods = Class.forName(clazz.toString()).getMethods();
+        Method[] inputMethods = clazz.getMethods();
         // sort generated methods to allow comparing generated file with previous versions
         Arrays.sort(inputMethods, Comparator.comparing(Method::toGenericString));
         for (Method inputMethod : inputMethods) {
