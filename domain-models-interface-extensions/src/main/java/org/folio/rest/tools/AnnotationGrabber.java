@@ -18,10 +18,6 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.reflect.ClassPath;
 import org.burningwave.core.assembler.ComponentContainer;
 import org.burningwave.core.assembler.ComponentSupplier;
 import org.burningwave.core.classes.CacheableSearchConfig;
@@ -80,10 +76,10 @@ public class AnnotationGrabber {
     JsonObject globalClassMapping = new JsonObject();
 
     // get classes in generated package
-    Collection<Class<?>> classes = findTopLevelClassesInPackage(RTFConsts.INTERFACE_PACKAGE);
+    Collection<Class<?>> interfaces = findTopLevelInterfacesInPackage(RTFConsts.INTERFACE_PACKAGE);
 
     // loop over all the classes from the package
-    classes.forEach(clazz -> {
+    interfaces.forEach(intface -> {
       try {
 
         ClientGenerator cGen = new ClientGenerator();
@@ -94,10 +90,10 @@ public class AnnotationGrabber {
         // will contain all mappings for a specific class in the package
         JsonObject classSpecificMapping = new JsonObject();
         // get annotations via reflection for a class
-        Annotation[] annotations = clazz.getAnnotations();
+        Annotation[] annotations = intface.getAnnotations();
         // create an entry for the class name = ex. "class":"com.sling.rest.jaxrs.resource.BibResource"
-        classSpecificMapping.put(CLASS_NAME, clazz.getName());
-        classSpecificMapping.put(INTERFACE_NAME, clazz.getName());
+        classSpecificMapping.put(CLASS_NAME, intface.getName());
+        classSpecificMapping.put(INTERFACE_NAME, intface.getName());
 
         // loop over all the annotations for the class in order to add the
         // needed info - these are class level annotation - not method level
@@ -113,7 +109,7 @@ public class AnnotationGrabber {
             if (type.isAssignableFrom(Path.class)) {
               classSpecificMapping.put(CLASS_URL, "^" + value);
               if (generateClient){
-                cGen.generateClassMeta(clazz.getName());
+                cGen.generateClassMeta(intface.getName());
               }
             }
           }
@@ -124,7 +120,7 @@ public class AnnotationGrabber {
 
         JsonArray methodsInAPath;
         // iterate over all functions in the class
-        Method[] inputMethods = clazz.getMethods();
+        Method[] inputMethods = intface.getMethods();
         // sort generated methods to allow comparing generated file with previous versions
         Arrays.sort(inputMethods, Comparator.comparing(Method::toGenericString));
         for (Method inputMethod : inputMethods) {
@@ -289,9 +285,9 @@ public class AnnotationGrabber {
     return retObject;
   }
 
-  private static Collection<Class<?>> findTopLevelClassesInPackage(String packageName) {
+  private static Collection<Class<?>> findTopLevelInterfacesInPackage(String packageName) {
     try (ClassCriteria packageCriteria = ClassCriteria.create()
-        .allThat(clazz -> clazz.getPackage().getName().equals(packageName))) {
+        .allThat(clazz -> clazz.getPackage().getName().equals(packageName) && clazz.isInterface())) {
 
       ComponentSupplier componentSupplier = ComponentContainer.getInstance();
       PathHelper pathHelper = componentSupplier.getPathHelper();
