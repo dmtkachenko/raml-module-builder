@@ -358,7 +358,7 @@ public class PostgresClientTest {
             row.addInteger(asyncResult.result().size());
             List<Row> rows = new LinkedList<>();
             rows.add(row);
-            RowSet rowSet = new LocalRowSet(asyncResult.result().size()).withColumns(columnNames).withRows(rows);
+            RowSet<Row> rowSet = new LocalRowSet(asyncResult.result().size()).withColumns(columnNames).withRows(rows);
             handler.handle(Future.succeededFuture(rowSet));
           } else {
             handler.handle(asyncResult);

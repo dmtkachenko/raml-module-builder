@@ -2918,7 +2918,7 @@ public class PostgresClientIT {
     RowStream<Row> sqlRowStream = new MySQLRowStream();
     StringBuilder events = new StringBuilder();
     Async async = context.async();
-    PostgresClientStreamResult<Object> streamResult = new PostgresClientStreamResult(resultInfo);
+    PostgresClientStreamResult<Object> streamResult = new PostgresClientStreamResult<>(resultInfo);
     PgConnection pgConnection = null;
     postgresClient.doStreamRowResults(sqlRowStream, Object.class, pgConnection,
       new QueryHelper("table_name"), streamResult, context.asyncAssertSuccess(sr -> {
@@ -3748,7 +3748,7 @@ public class PostgresClientIT {
 
   @Test
   public void selectReturnEmptySet(TestContext context) {
-    RowSet rowSet = new LocalRowSet(0);
+    RowSet<Row> rowSet = new LocalRowSet(0);
     Promise<RowSet<Row>> promise = Promise.promise();
     promise.complete(rowSet);
     PostgresClient.selectReturn(promise.future(), context.asyncAssertSuccess(res ->
@@ -3764,7 +3764,7 @@ public class PostgresClientIT {
     Row row = new RowImpl(rowDesc);
     row.addString("value");
     rows.add(row);
-    RowSet rowSet = new LocalRowSet(1).withColumns(columns).withRows(rows);
+    RowSet<Row> rowSet = new LocalRowSet(1).withColumns(columns).withRows(rows);
 
     Promise<RowSet<Row>> promise = Promise.promise();
     promise.complete(rowSet);
