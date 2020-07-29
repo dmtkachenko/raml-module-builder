@@ -76,7 +76,7 @@ public class AnnotationGrabber {
     JsonObject globalClassMapping = new JsonObject();
 
     // get classes in generated package
-    Collection<Class<?>> interfaces = findTopLevelInterfacesInPackage(RTFConsts.INTERFACE_PACKAGE);
+    Collection<Class<?>> interfaces = ResourceInterfacesHelper.instance().getInterfaces();
 
     // loop over all the classes from the package
     interfaces.forEach(intface -> {
@@ -285,23 +285,6 @@ public class AnnotationGrabber {
     return retObject;
   }
 
-  private static Collection<Class<?>> findTopLevelInterfacesInPackage(String packageName) {
-    try (ClassCriteria packageCriteria = ClassCriteria.create()
-        .allThat(clazz -> clazz.getPackage().getName().equals(packageName) && clazz.isInterface())) {
-
-      ComponentSupplier componentSupplier = ComponentContainer.getInstance();
-      PathHelper pathHelper = componentSupplier.getPathHelper();
-
-      CacheableSearchConfig searchConfig = SearchConfig.forPaths(pathHelper.getAllPaths()).by(packageCriteria);
-
-      ClassHunter classHunter = componentSupplier.getClassHunter();
-      ClassHunter.SearchResult searchResult = classHunter.loadInCache(searchConfig).find();
-
-      Collection<Class<?>> classes = searchResult.getClasses();
-      return classes != null ? classes : Collections.emptyList();
-    }
-  }
-
   private static boolean isPossibleHttpMethod(String method) {
     switch (method) {
     case "javax.ws.rs.PUT":
@@ -333,6 +316,54 @@ public class AnnotationGrabber {
     }
     regexPath = regexPath.concat("$");
     return regexPath;
+  }
+
+  private static class ResourceInterfacesHelper {
+
+    private static final ResourceInterfacesHelper HELPER = new ResourceInterfacesHelper();
+
+    private Collection<Class<?>> resourceInterfaces;
+
+
+    private ResourceInterfacesHelper() {
+    }
+
+    static ResourceInterfacesHelper instance() {
+      return HELPER;
+    }
+
+    synchronized Collection<Class<?>> getInterfaces() {
+      if (resourceInterfaces == null) {
+        System.out.println("Loading resource interfaces.. ");
+        long start = System.currentTimeMillis();
+
+        resourceInterfaces = findTopLevelInterfacesInPackage(RTFConsts.INTERFACE_PACKAGE);
+
+        System.out.println("Resource interfaces loaded in " + (System.currentTimeMillis() - start) + " ms");
+      } else {
+        System.out.println("Resource interfaces already loaded. Returning from cache.. ");
+      }
+
+      return resourceInterfaces;
+    }
+
+    private Collection<Class<?>> findTopLevelInterfacesInPackage(String packageName) {
+      try (ClassCriteria packageCriteria = ClassCriteria.create()
+              .allThat(clazz -> clazz.getPackage().getName().equals(packageName) && clazz.isInterface())) {
+
+        ComponentSupplier componentSupplier = ComponentContainer.getInstance();
+        PathHelper pathHelper = componentSupplier.getPathHelper();
+
+        CacheableSearchConfig searchConfig = SearchConfig.forPaths(pathHelper.getAllPaths()).by(packageCriteria);
+
+        ClassHunter classHunter = componentSupplier.getClassHunter();
+        ClassHunter.SearchResult searchResult = classHunter.loadInCache(searchConfig).find();
+
+        Collection<Class<?>> classes = searchResult.getClasses();
+        return classes != null ? classes : Collections.emptyList();
+      }
+    }
+
   }
 
 }
