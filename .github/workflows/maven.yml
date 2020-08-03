@@ -5,7 +5,7 @@ name: Java CI with Maven
 
 on:
   push:
-    branches: [ master, investigate-issues-with-jdk11-in-unit-tests ]
+    branches: [ master, RMB-682-class-path-util ]
   pull_request:
     branches: [ master ]
 
