@@ -53,7 +53,7 @@ public class Table extends Versioned {
    * @throws IllegalArgumentException on invalid tableName, see {@link SqlUtil#validateSqlIdentifier(String)}
    */
   public void setTableName(String tableName) {
-    SqlUtil.validateSqlIdentifier(tableName);
+    //SqlUtil.validateSqlIdentifier(tableName);
     this.tableName = tableName;
   }
 
