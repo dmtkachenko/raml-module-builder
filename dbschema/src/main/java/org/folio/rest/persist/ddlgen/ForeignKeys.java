@@ -43,7 +43,7 @@ public class ForeignKeys extends Field {
    * @throws IllegalArgumentException on invalid targetTable, see {@link SqlUtil#validateSqlIdentifier(String)}
    */
   public void setTargetTable(String targetTable) {
-    //SqlUtil.validateSqlIdentifier(targetTable);
+    SqlUtil.validateSqlIdentifier(targetTable);
     this.targetTable = targetTable;
   }
 
